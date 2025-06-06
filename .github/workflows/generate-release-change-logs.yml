@@ -2,7 +2,7 @@ name: Draft Release and Push to Backlog
 
 on:
   pull_request:
-    types: [ready_for_review]
+    types: [ready_for_review, synchronize]
 
 jobs:
   post-release-to-backlog:
