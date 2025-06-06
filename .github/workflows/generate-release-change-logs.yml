@@ -33,14 +33,14 @@ jobs:
         env:
           BACKLOG_SPACE: swiftclock.backlog.com
           BACKLOG_API_KEY: ${{ secrets.BACKLOG_API_KEY }}
-          BACKLOG_PROJECT_KEY: RELEASE
+          BACKLOG_PROJECT_ID: 151481
         run: |
           echo "Posting changelog to Backlog..."
 
           body=$(echo "${{ steps.release_info.outputs.result }}" | jq -Rs .)
           curl -X POST "https://${BACKLOG_SPACE}/api/v2/issues?apiKey=${BACKLOG_API_KEY}" \
             -H "Content-Type: application/x-www-form-urlencoded" \
-            --data-urlencode "projectIdOrKey=${BACKLOG_PROJECT_KEY}" \
+            --data-urlencode "projectIdOrKey=${BACKLOG_PROJECT_ID}" \
             --data-urlencode "summary=Release from PR #${{ github.event.pull_request.number }}" \
             --data-urlencode "description=${body}" \
             --data-urlencode "issueTypeId=1" \
