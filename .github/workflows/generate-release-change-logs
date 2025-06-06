@@ -1,46 +1,42 @@
-name: Create Backlog Doc for Draft PR from release/* to master
+name: Draft Release and Push to Backlog
 
 on:
-  pull_request:
-    types: [opened]
+  release:
+    types: [published]
 
 jobs:
-  create-backlog-doc:
-    if: >
-      github.event.pull_request.draft == true &&
-      startsWith(github.head_ref, 'release/') &&
-      github.base_ref == 'master'
-
+  post-release-to-backlog:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v3
 
-      - name: Generate backlog document
+      - name: Get release info
+        id: release_info
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const release = await github.rest.repos.getReleaseByTag({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag: context.payload.release.tag_name
+            });
+            return release.data.body;
+
+      - name: Post changelog to Backlog.com
+        env:
+          BACKLOG_SPACE: swiftclock.backlog.com
+          BACKLOG_API_KEY: ${{ secrets.BACKLOG_API_KEY }}
+          BACKLOG_PROJECT_KEY: RELEASE
         run: |
-          mkdir -p .backlogs
+          echo "Posting changelog to Backlog..."
 
-          cat <<EOF > .backlogs/pr-${{ github.event.pull_request.number }}.md
-          # 📝 Backlog for PR #${{ github.event.pull_request.number }}
-
-          **Title:** ${{ github.event.pull_request.title }}
-
-          **Description:**
-          ${{ github.event.pull_request.body }}
-
-          **Author:** ${{ github.event.pull_request.user.login }}
-
-          **Source Branch:** ${{ github.head_ref }}
-          **Target Branch:** ${{ github.base_ref }}
-
-          **Created At:** ${{ github.event.pull_request.created_at }}
-          EOF
-
-      - name: Commit backlog file
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add .backlogs/
-          git commit -m "docs: auto-generate backlog for PR #${{ github.event.pull_request.number }}"
-          git push
+          body=$(echo "${{ steps.release_info.outputs.result }}" | jq -Rs .)
+          curl -X POST "https://${BACKLOG_SPACE}.backlog.com/api/v2/issues?apiKey=${BACKLOG_API_KEY}" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            --data-urlencode "projectIdOrKey=${BACKLOG_PROJECT_KEY}" \
+            --data-urlencode "summary=Release ${{ github.event.release.tag_name }}" \
+            --data-urlencode "description=${body}" \
+            --data-urlencode "issueTypeId=1" \
+            --data-urlencode "priorityId=3"
