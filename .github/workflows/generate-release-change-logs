@@ -1,0 +1,46 @@
+name: Create Backlog Doc for Draft PR from release/* to master
+
+on:
+  pull_request:
+    types: [opened]
+
+jobs:
+  create-backlog-doc:
+    if: >
+      github.event.pull_request.draft == true &&
+      startsWith(github.head_ref, 'release/') &&
+      github.base_ref == 'master'
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Generate backlog document
+        run: |
+          mkdir -p .backlogs
+
+          cat <<EOF > .backlogs/pr-${{ github.event.pull_request.number }}.md
+          # 📝 Backlog for PR #${{ github.event.pull_request.number }}
+
+          **Title:** ${{ github.event.pull_request.title }}
+
+          **Description:**
+          ${{ github.event.pull_request.body }}
+
+          **Author:** ${{ github.event.pull_request.user.login }}
+
+          **Source Branch:** ${{ github.head_ref }}
+          **Target Branch:** ${{ github.base_ref }}
+
+          **Created At:** ${{ github.event.pull_request.created_at }}
+          EOF
+
+      - name: Commit backlog file
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .backlogs/
+          git commit -m "docs: auto-generate backlog for PR #${{ github.event.pull_request.number }}"
+          git push
