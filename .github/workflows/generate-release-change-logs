@@ -1,11 +1,15 @@
 name: Draft Release and Push to Backlog
 
 on:
-  release:
-    types: [published]
+  pull-request:
+    types: [ready_to_review]
 
 jobs:
   post-release-to-backlog:
+    if: |
+      github.event.pull_request.draft == true &&
+      startsWith(github.event.pull_request.head.ref, 'release/') &&
+      github.event.pull_request.base.ref == 'master'
     runs-on: ubuntu-latest
 
     steps:
