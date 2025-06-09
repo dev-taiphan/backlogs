@@ -27,8 +27,25 @@ jobs:
         id: changelog
         run: |
           LOG=$(git log origin/${{ github.event.pull_request.base.ref }}..HEAD --pretty=format:"- %s (%an)")
+          
+          # Tạo template Markdown cho changelog
+          cat <<EOF > changelog.md
+          # Release Notes for PR #${{ github.event.pull_request.number }}
+      
+          **Base branch:** ${{ github.event.pull_request.base.ref }}  
+          **Head branch:** ${{ github.event.pull_request.head.ref }}
+      
+          ## Changelog
+          $LOG
+      
+          ---
+      
+          *Generated automatically by GitHub Actions*
+          EOF
+
+          # Đưa nội dung file changelog.md vào output để các step sau có thể dùng
           echo "changelog<<EOF" >> $GITHUB_OUTPUT
-          echo "$LOG" >> $GITHUB_OUTPUT
+          cat changelog.md >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Get existing Backlog issue ID (if any)
