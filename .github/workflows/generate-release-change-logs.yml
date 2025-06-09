@@ -3,16 +3,15 @@ name: Draft Release and Push to Backlog
 on:
   pull_request:
     types: [ready_for_review, synchronize]
-    
+
 permissions:
-  contents: write
+  contents: read
   pull-requests: write
   issues: write
 
 jobs:
-  post-release-to-backlog:
+  handle-release:
     if: |
-      github.event.pull_request.draft == false &&
       startsWith(github.event.pull_request.head.ref, 'release/') &&
       github.event.pull_request.base.ref == 'master'
     runs-on: ubuntu-latest
@@ -20,44 +19,72 @@ jobs:
       name: prd
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v3
-
-      - name: Ensure jq is installed
-        run: sudo apt-get update && sudo apt-get install -y jq
-
-      - name: Get PR body as release notes
-        id: release_info
-        uses: actions/github-script@v7
         with:
-          script: |
-            const body = context.payload.pull_request.body || 'No changelog provided.';
-            return body;
+          fetch-depth: 0
 
-      - name: Post changelog to Backlog.com
+      - name: Generate changelog from commits
+        id: changelog
+        run: |
+          COMMITS=$(git log origin/${{ github.event.pull_request.base.ref }}..HEAD --pretty=format:"- %s (%an)")
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          echo "$COMMITS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Store issue key in a file
+        id: store-key
+        run: |
+          echo "ISSUE_FILE=.backlog_issue_id" >> $GITHUB_ENV
+
+      - name: Create or Update Backlog issue
+        id: post_backlog
         env:
           BACKLOG_SPACE: swiftclock.backlog.com
           BACKLOG_API_KEY: ${{ secrets.BACKLOG_API_KEY }}
           BACKLOG_PROJECT_ID: 151481
         run: |
-          echo "Posting changelog to Backlog..."
+          ISSUE_FILE=".backlog_issue_id"
 
-          body=$(echo "${{ steps.release_info.outputs.result }}" | jq -Rs .)
-          curl -X POST "https://${BACKLOG_SPACE}/api/v2/issues?apiKey=${BACKLOG_API_KEY}" \
-            -H "Content-Type: application/x-www-form-urlencoded" \
-            --data-urlencode "projectIdOrKey=${BACKLOG_PROJECT_ID}" \
-            --data-urlencode "summary=Release from PR #${{ github.event.pull_request.number }}" \
-            --data-urlencode "description=${body}" \
-            --data-urlencode "issueTypeId=1" \
-            --data-urlencode "priorityId=3"
+          function create_issue() {
+            echo "Creating new Backlog ticket..."
+            res=$(curl -s -X POST "https://${BACKLOG_SPACE}/api/v2/issues?apiKey=${BACKLOG_API_KEY}" \
+              -H "Content-Type: application/x-www-form-urlencoded" \
+              --data-urlencode "projectId=${BACKLOG_PROJECT_ID}" \
+              --data-urlencode "summary=Release from PR #${{ github.event.pull_request.number }}" \
+              --data-urlencode "description=${{ steps.changelog.outputs.changelog }}" \
+              --data-urlencode "issueTypeId=645049" \
+              --data-urlencode "priorityId=3")
+            issue_id=$(echo "$res" | jq -r '.id')
+            echo "$issue_id" > "$ISSUE_FILE"
+          }
 
-      - name: Comment to PR
+          function update_issue() {
+            issue_id=$(cat "$ISSUE_FILE")
+            echo "Updating Backlog ticket ID $issue_id..."
+            curl -s -X PATCH "https://${BACKLOG_SPACE}/api/v2/issues/${issue_id}?apiKey=${BACKLOG_API_KEY}" \
+              -H "Content-Type: application/x-www-form-urlencoded" \
+              --data-urlencode "comment=${{ steps.changelog.outputs.changelog }}"
+          }
+
+          if [[ "${{ github.event.action }}" == "ready_for_review" ]]; then
+            create_issue
+          elif [[ "${{ github.event.action }}" == "synchronize" && -f "$ISSUE_FILE" ]]; then
+            update_issue
+          else
+            echo "No matching action to handle."
+          fi
+
+      - name: Comment on PR
         uses: actions/github-script@v7
         with:
           script: |
+            const body = `📝 Changelog from commits has been ${
+              context.payload.action === "ready_for_review" ? "posted to" : "updated in"
+            } Backlog.`;
             github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-              body: "✅ Changelog has been posted to Backlog for PR #${context.issue.number}."
+              body
             });
