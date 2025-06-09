@@ -167,7 +167,10 @@ jobs:
               body: `📝 Backlog Issue ID: ${{ steps.backlog.outputs.issue_id }}`
             });
 
-            curl -s -X PATCH "https://${BACKLOG_SPACE}/api/v2/issues/${{ steps.backlog.outputs.issue_id }}?apiKey=${BACKLOG_API_KEY}" \
+      - name: Change backlog ticket to in-progress
+        if: ${{ !steps.get_comment.outputs.issue_id }}
+        run: |
+          curl -s -X PATCH "https://${BACKLOG_SPACE}/api/v2/issues/${{ steps.backlog.outputs.issue_id }}?apiKey=${BACKLOG_API_KEY}" \
               -H "Content-Type: application/x-www-form-urlencoded" \
               --data-urlencode "statusId=2"
 
