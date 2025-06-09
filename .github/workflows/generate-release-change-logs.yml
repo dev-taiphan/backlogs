@@ -2,7 +2,7 @@ name: Draft Release and Push to Backlog
 
 on:
   pull_request:
-    types: [ready_for_review, synchronize]
+    types: [ready_for_review, synchronize, closed]
 
 permissions:
   contents: read
@@ -10,13 +10,16 @@ permissions:
   issues: write
 
 jobs:
-  handle-release:
+  generate-tag:
     if: |
       startsWith(github.event.pull_request.head.ref, 'release/') &&
       github.event.pull_request.base.ref == 'master' &&
       github.event.pull_request.draft == false
     runs-on: ubuntu-latest
 
+    outputs:
+      tag: ${{ steps.generate_tag.outputs.tag }}
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -62,14 +65,28 @@ jobs:
 
           echo "tag=$NEW_TAG" >> $GITHUB_OUTPUT
 
+  handle-release:
+    if: |
+      startsWith(github.event.pull_request.head.ref, 'release/') &&
+      github.event.pull_request.base.ref == 'master' &&
+      github.event.pull_request.draft == false
+    needs: generate-tag
+    runs-on: ubuntu-latest 
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  
+
       - name: Generate changelog from commits
         id: changelog
         run: |
-          LOG=$(git log origin/${{ github.event.pull_request.base.ref }}..HEAD --pretty=format:"- %s (%an) [%h](https://github.com/${{ github.repository }}/commit/%H)")
+          LOG=$(git log origin/${{ github.event.pull_request.base.ref }}..HEAD --pretty=format:"- %s (%an) | [%h](https://github.com/${{ github.repository }}/commit/%H)")
           
           # Tạo template Markdown cho changelog
           cat <<EOF > changelog.md
-          # Release Notes for PR #${{ steps.generate_tag.outputs.tag }}
+          # Release Notes for PR #${{ needs.generate-tag.outputs.tag }}
 
           ## Overview    
           **PR Creator:** ${{ github.event.pull_request.user.login }}
@@ -163,3 +180,26 @@ jobs:
               issue_number: context.issue.number,
               body: msg
             });
+
+  tag-release:
+    if: |
+      startsWith(github.event.pull_request.head.ref, 'release/') &&
+      github.event.pull_request.base.ref == 'master' &&
+      github.event.pull_request.merged == true
+    needs: generate-tag
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Create and push tag
+        run: |
+          TAG=${{ needs.generate-tag.outputs.tag }}
+          git tag "$TAG"
+          git push origin "$TAG" 
+      
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.generate-tag.outputs.tag }}
+          name: Release ${{ needs.generate-tag.outputs.tag }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.AUTH_GITHUB_TOKEN }}
