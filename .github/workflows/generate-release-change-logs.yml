@@ -204,6 +204,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ needs.generate-tag.outputs.tag }}
-          name: Release ${{ needs.generate-tag.outputs.tag }}
+          name: ${{ needs.generate-tag.outputs.tag }}
         env:
           GITHUB_TOKEN: ${{ secrets.AUTH_GITHUB_TOKEN }}
