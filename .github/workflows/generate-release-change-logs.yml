@@ -11,6 +11,7 @@ permissions:
 
 jobs:
   generate-tag:
+    # Run this job only if PR is from a release/* branch, targeting master, and is not a draft
     if: |
       startsWith(github.event.pull_request.head.ref, 'release/') &&
       github.event.pull_request.base.ref == 'master' &&
@@ -24,36 +25,30 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0
+          fetch-depth: 0  # Ensure we fetch all tags/commits for tag generation
 
       - name: Generate daily incremental tag
         id: generate_tag
         run: |
-          # Lấy ngày hiện tại theo timezone UTC (bạn có thể chỉnh timezone nếu cần)
+          # Get current date (UTC) as base for tag
           TODAY=$(date -u +"%Y%m%d")
           echo "Today: $TODAY"
 
-          # Lấy danh sách tag bắt đầu bằng ngày hôm nay
+          # List all tags starting with today’s date
           TAGS=$(git tag -l "${TODAY}*")
-
           echo "Existing tags: $TAGS"
 
           if [ -z "$TAGS" ]; then
-            # Nếu chưa có tag nào ngày hôm nay, thì tag = ngày hôm nay
-            NEW_TAG="$TODAY"
+            NEW_TAG="$TODAY"  # First tag of the day
           else
-            # Nếu đã có tag rồi, lấy số suffix lớn nhất
-            # Ví dụ các tag: 20250609, 20250609-1, 20250609-2
-            # Lấy số suffix: 0 nếu tag đúng bằng TODAY (không suffix)
-            # else lấy phần suffix sau dấu '-'
+            # Determine the highest suffix for today’s tags
             MAX=0
             for TAG in $TAGS; do
               if [ "$TAG" = "$TODAY" ]; then
                 NUM=0
               else
-                NUM=${TAG#${TODAY}-}  # cắt bỏ phần ngày
+                NUM=${TAG#${TODAY}-}
               fi
-              # cập nhật max
               if [ "$NUM" -gt "$MAX" ]; then
                 MAX=$NUM
               fi
@@ -62,10 +57,10 @@ jobs:
           fi
 
           echo "New tag: $NEW_TAG"
-
           echo "tag=$NEW_TAG" >> $GITHUB_OUTPUT
 
   handle-release:
+    # Same condition: only for non-draft PRs from release/* to master
     if: |
       startsWith(github.event.pull_request.head.ref, 'release/') &&
       github.event.pull_request.base.ref == 'master' &&
@@ -82,9 +77,10 @@ jobs:
       - name: Generate changelog from commits
         id: changelog
         run: |
+          # Collect commit messages since the base branch
           LOG=$(git log origin/${{ github.event.pull_request.base.ref }}..HEAD --pretty=format:"- %s (%an) | [%h](https://github.com/${{ github.repository }}/commit/%H)")
-          
-          # Tạo template Markdown cho changelog
+
+          # Build changelog in markdown format
           cat <<EOF > changelog.md
           # Release Notes for PR #${{ needs.generate-tag.outputs.tag }}
 
@@ -100,7 +96,7 @@ jobs:
           *Generated automatically by GitHub Actions*
           EOF
 
-          # Đưa nội dung file changelog.md vào output để các step sau có thể dùng
+          # Output changelog for use in later steps
           echo "changelog<<EOF" >> $GITHUB_OUTPUT
           cat changelog.md >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -110,12 +106,12 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
+            // Search for existing PR comments containing "Backlog Issue ID:"
             const comments = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number
             });
-      
             const marker = 'Backlog Issue ID:';
             const found = comments.data.find(c => c.body && c.body.includes(marker));
             const id = found ? found.body.split(marker)[1].trim() : '';
@@ -156,6 +152,7 @@ jobs:
           fi
 
       - name: Save Backlog issue ID to PR comment
+        # Only post comment if this is a new issue
         if: ${{ steps.get_comment.outputs.issue_id == '' || steps.get_comment.outputs.issue_id == null }}
         uses: actions/github-script@v7
         with:
@@ -182,6 +179,7 @@ jobs:
             });
 
   tag-release:
+    # Only run when the PR is merged into master
     if: |
       startsWith(github.event.pull_request.head.ref, 'release/') &&
       github.event.pull_request.base.ref == 'master' &&
