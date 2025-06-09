@@ -136,9 +136,11 @@ jobs:
               --data-urlencode "projectId=${BACKLOG_PROJECT_ID}" \
               --data-urlencode "summary=Release from PR #${{ github.event.pull_request.number }}" \
               --data-urlencode "description=$CHANGELOG" \
-              --data-urlencode "issueTypeId=645049" \
-              --data-urlencode "statusId=2" \          
+              --data-urlencode "issueTypeId=645049" \         
               --data-urlencode "priorityId=3")
+            curl -s -X PATCH "https://${BACKLOG_SPACE}/api/v2/issues/${EXISTING_ID}?apiKey=${BACKLOG_API_KEY}" \
+              -H "Content-Type: application/x-www-form-urlencoded" \
+              --data-urlencode "statusId=2"
 
             ISSUE_ID=$(echo "$RES" | jq -r '.id')
             echo "Backlog issue created with ID $ISSUE_ID"
