@@ -23,17 +23,57 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Generate daily incremental tag
+        id: generate_tag
+        run: |
+          # Lấy ngày hiện tại theo timezone UTC (bạn có thể chỉnh timezone nếu cần)
+          TODAY=$(date -u +"%Y%m%d")
+          echo "Today: $TODAY"
+
+          # Lấy danh sách tag bắt đầu bằng ngày hôm nay
+          TAGS=$(git tag -l "${TODAY}*")
+
+          echo "Existing tags: $TAGS"
+
+          if [ -z "$TAGS" ]; then
+            # Nếu chưa có tag nào ngày hôm nay, thì tag = ngày hôm nay
+            NEW_TAG="$TODAY"
+          else
+            # Nếu đã có tag rồi, lấy số suffix lớn nhất
+            # Ví dụ các tag: 20250609, 20250609-1, 20250609-2
+            # Lấy số suffix: 0 nếu tag đúng bằng TODAY (không suffix)
+            # else lấy phần suffix sau dấu '-'
+            MAX=0
+            for TAG in $TAGS; do
+              if [ "$TAG" = "$TODAY" ]; then
+                NUM=0
+              else
+                NUM=${TAG#${TODAY}-}  # cắt bỏ phần ngày
+              fi
+              # cập nhật max
+              if [ "$NUM" -gt "$MAX" ]; then
+                MAX=$NUM
+              fi
+            done
+            NEW_TAG="${TODAY}-$((MAX+1))"
+          fi
+
+          echo "New tag: $NEW_TAG"
+
+          echo "tag=$NEW_TAG" >> $GITHUB_OUTPUT
+
       - name: Generate changelog from commits
         id: changelog
         run: |
-          LOG=$(git log origin/${{ github.event.pull_request.base.ref }}..HEAD --pretty=format:"- %s (%an) [commit](https://github.com/${{ github.repository }}/commit/%H)")
+          LOG=$(git log origin/${{ github.event.pull_request.base.ref }}..HEAD --pretty=format:"- %s (%an) [%h](https://github.com/${{ github.repository }}/commit/%H)")
           
           # Tạo template Markdown cho changelog
           cat <<EOF > changelog.md
-          # Release Notes for PR #${{ github.event.pull_request.number }}
-      
-          **Base branch:** ${{ github.event.pull_request.base.ref }}  
-          **Head branch:** ${{ github.event.pull_request.head.ref }}
+          # Release Notes for PR #${{ steps.generate_tag.outputs.tag }}
+
+          ## Overview    
+          **PR Creator:** ${{ github.event.pull_request.user.login }}
+          **Release Branch:** ${{ github.event.pull_request.head.ref }}
       
           ## Changelog
           $LOG
