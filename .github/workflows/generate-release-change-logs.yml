@@ -62,7 +62,7 @@ jobs:
               --data-urlencode "projectIdOrKey=${BACKLOG_PROJECT_ID}" \
               --data-urlencode "summary=Release from PR #${{ github.event.pull_request.number }}" \
               --data-urlencode "description=$CHANGELOG" \
-              --data-urlencode "issueTypeId=1" \
+              --data-urlencode "issueTypeId=645049" \
               --data-urlencode "priorityId=3")
 
             ISSUE_ID=$(echo "$RES" | jq -r '.id')
