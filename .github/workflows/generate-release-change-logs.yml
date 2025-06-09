@@ -15,11 +15,9 @@ jobs:
       startsWith(github.event.pull_request.head.ref, 'release/') &&
       github.event.pull_request.base.ref == 'master'
     runs-on: ubuntu-latest
-    environment:
-      name: prd
 
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
@@ -27,64 +25,80 @@ jobs:
       - name: Generate changelog from commits
         id: changelog
         run: |
-          COMMITS=$(git log origin/${{ github.event.pull_request.base.ref }}..HEAD --pretty=format:"- %s (%an)")
+          LOG=$(git log origin/${{ github.event.pull_request.base.ref }}..HEAD --pretty=format:"- %s (%an)")
           echo "changelog<<EOF" >> $GITHUB_OUTPUT
-          echo "$COMMITS" >> $GITHUB_OUTPUT
+          echo "$LOG" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Store issue key in a file
-        id: store-key
-        run: |
-          echo "ISSUE_FILE=.backlog_issue_id" >> $GITHUB_ENV
+      - name: Get existing Backlog issue ID (if any)
+        id: get_comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number
+            });
+
+            const marker = 'Backlog Issue ID:';
+            const found = comments.data.find(c => c.body && c.body.includes(marker));
+            return found ? found.body.split(marker)[1].trim() : '';
 
       - name: Create or Update Backlog issue
-        id: post_backlog
+        id: backlog
         env:
           BACKLOG_SPACE: swiftclock.backlog.com
           BACKLOG_API_KEY: ${{ secrets.BACKLOG_API_KEY }}
           BACKLOG_PROJECT_ID: 151481
         run: |
-          ISSUE_FILE=".backlog_issue_id"
+          CHANGELOG="${{ steps.changelog.outputs.changelog }}"
+          EXISTING_ID="${{ steps.get_comment.outputs.result }}"
 
-          function create_issue() {
-            echo "Creating new Backlog ticket..."
-            res=$(curl -s -X POST "https://${BACKLOG_SPACE}/api/v2/issues?apiKey=${BACKLOG_API_KEY}" \
+          if [ -z "$EXISTING_ID" ]; then
+            echo "Creating new Backlog issue..."
+            RES=$(curl -s -X POST "https://${BACKLOG_SPACE}/api/v2/issues?apiKey=${BACKLOG_API_KEY}" \
               -H "Content-Type: application/x-www-form-urlencoded" \
-              --data-urlencode "projectId=${BACKLOG_PROJECT_ID}" \
+              --data-urlencode "projectIdOrKey=${BACKLOG_PROJECT_ID}" \
               --data-urlencode "summary=Release from PR #${{ github.event.pull_request.number }}" \
-              --data-urlencode "description=${{ steps.changelog.outputs.changelog }}" \
-              --data-urlencode "issueTypeId=645049" \
+              --data-urlencode "description=$CHANGELOG" \
+              --data-urlencode "issueTypeId=1" \
               --data-urlencode "priorityId=3")
-            issue_id=$(echo "$res" | jq -r '.id')
-            echo "$issue_id" > "$ISSUE_FILE"
-          }
 
-          function update_issue() {
-            issue_id=$(cat "$ISSUE_FILE")
-            echo "Updating Backlog ticket ID $issue_id..."
-            curl -s -X PATCH "https://${BACKLOG_SPACE}/api/v2/issues/${issue_id}?apiKey=${BACKLOG_API_KEY}" \
-              -H "Content-Type: application/x-www-form-urlencoded" \
-              --data-urlencode "comment=${{ steps.changelog.outputs.changelog }}"
-          }
+            ISSUE_ID=$(echo "$RES" | jq -r '.id')
+            echo "Backlog issue created with ID $ISSUE_ID"
 
-          if [[ "${{ github.event.action }}" == "ready_for_review" ]]; then
-            create_issue
-          elif [[ "${{ github.event.action }}" == "synchronize" && -f "$ISSUE_FILE" ]]; then
-            update_issue
+            echo "issue_id=$ISSUE_ID" >> $GITHUB_OUTPUT
           else
-            echo "No matching action to handle."
+            echo "Updating existing Backlog issue ID $EXISTING_ID..."
+            curl -s -X PATCH "https://${BACKLOG_SPACE}/api/v2/issues/${EXISTING_ID}?apiKey=${BACKLOG_API_KEY}" \
+              -H "Content-Type: application/x-www-form-urlencoded" \
+              --data-urlencode "comment=$CHANGELOG"
+            echo "issue_id=$EXISTING_ID" >> $GITHUB_OUTPUT
           fi
 
-      - name: Comment on PR
+      - name: Save Backlog issue ID to PR comment
+        if: steps.get_comment.outputs.result == ''
         uses: actions/github-script@v7
         with:
           script: |
-            const body = `📝 Changelog from commits has been ${
-              context.payload.action === "ready_for_review" ? "posted to" : "updated in"
-            } Backlog.`;
             github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-              body
+              body: `📝 Backlog Issue ID: ${{ steps.backlog.outputs.issue_id }}`
+            });
+
+      - name: Notify PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const msg = context.payload.action === "ready_for_review"
+              ? "✅ Backlog ticket created and changelog posted."
+              : "🔄 Backlog ticket updated with latest changelog.";
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: msg
             });
