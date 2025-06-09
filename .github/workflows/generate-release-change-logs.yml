@@ -79,7 +79,7 @@ jobs:
           fi
 
       - name: Save Backlog issue ID to PR comment
-        if: "!steps.get_comment.outputs.result"
+        if: ${{ steps.get_comment.outputs.result == '' || steps.get_comment.outputs.result == null }}
         uses: actions/github-script@v7
         with:
           script: |
