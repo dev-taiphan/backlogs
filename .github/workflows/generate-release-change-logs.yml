@@ -54,6 +54,7 @@ jobs:
         run: |
           CHANGELOG="${{ steps.changelog.outputs.changelog }}"
           EXISTING_ID="${{ steps.get_comment.outputs.result }}"
+          echo "${{ steps.get_comment.outputs.result }}"
 
           if [ -z "$EXISTING_ID" ]; then
             echo "Creating new Backlog issue..."
