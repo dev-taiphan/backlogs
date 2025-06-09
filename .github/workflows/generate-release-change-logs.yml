@@ -54,7 +54,7 @@ jobs:
           BACKLOG_PROJECT_ID: 151481
         run: |
           CHANGELOG="${{ steps.changelog.outputs.changelog }}"
-          EXISTING_ID="${{ steps.get_comment.outputs.result }}"
+          EXISTING_ID="${{ steps.get_comment.outputs.issue_id }}"
           echo "${{ steps.get_comment.outputs.result }}"
 
           if [ -z "$EXISTING_ID" ]; then
