@@ -137,7 +137,7 @@ jobs:
               --data-urlencode "summary=Release from PR #${{ github.event.pull_request.number }}" \
               --data-urlencode "description=$CHANGELOG" \
               --data-urlencode "issueTypeId=645049" \
-              --data-urlencode "statusId=2"          
+              --data-urlencode "statusId=2" \          
               --data-urlencode "priorityId=3")
 
             ISSUE_ID=$(echo "$RES" | jq -r '.id')
