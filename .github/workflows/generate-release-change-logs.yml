@@ -13,7 +13,8 @@ jobs:
   handle-release:
     if: |
       startsWith(github.event.pull_request.head.ref, 'release/') &&
-      github.event.pull_request.base.ref == 'master'
+      github.event.pull_request.base.ref == 'master' &&
+      github.event.pull_request.draft == false
     runs-on: ubuntu-latest
 
     steps:
