@@ -65,6 +65,9 @@ jobs:
               --data-urlencode "issueTypeId=645049" \
               --data-urlencode "priorityId=3")
 
+            echo "🧾 Raw response from Backlog:"
+            echo "$RES"
+
             ISSUE_ID=$(echo "$RES" | jq -r '.id')
             echo "Backlog issue created with ID $ISSUE_ID"
 
