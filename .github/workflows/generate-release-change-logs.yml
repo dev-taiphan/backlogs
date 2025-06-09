@@ -202,59 +202,21 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Determine unique tag to push
-        id: set-tag
-        run: |
-          TAG_BASE=$(date -u +"%Y%m%d")
-          echo "Base tag: $TAG_BASE"
-
-          # Lấy danh sách tag trên remote bắt đầu bằng ngày hôm nay
-          EXISTING_TAGS=$(git ls-remote --tags origin | grep "refs/tags/${TAG_BASE}" | awk -F'/' '{print $3}')
-          echo "Existing tags on remote: $EXISTING_TAGS"
-
-          MAX_SUFFIX=0
-          for TAG in $EXISTING_TAGS; do
-            if [[ "$TAG" == "$TAG_BASE" ]]; then
-              NUM=0
-            else
-              NUM=${TAG#${TAG_BASE}-}
-              # Nếu suffix không phải số thì bỏ qua
-              if ! [[ "$NUM" =~ ^[0-9]+$ ]]; then
-                NUM=0
-              fi
-            fi
-
-            if (( NUM > MAX_SUFFIX )); then
-              MAX_SUFFIX=$NUM
-            fi
-          done
-
-          if (( MAX_SUFFIX == 0 )); then
-            NEW_TAG="$TAG_BASE"
-          else
-            NEW_TAG="${TAG_BASE}-$((MAX_SUFFIX+1))"
-          fi
-
-          echo "New tag to push: $NEW_TAG"
-
-          # Tạo output cho bước khác dùng
-          echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
-
       - name: Create and push tag
         run: |
-          TAG=${{ steps.set-tag.outputs.new_tag }}
+          TAG=${{ needs.generate-tag.outputs.tag }}
           git tag "$TAG"
           git push origin "$TAG" 
       
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ steps.set-tag.outputs.new_tag }}
-          name: ${{ steps.set-tag.outputs.new_tag }}
+          tag_name: ${{ needs.generate-tag.outputs.tag }}
+          name: ${{ needs.generate-tag.outputs.tag }}
         env:
           GITHUB_TOKEN: ${{ secrets.AUTH_GITHUB_TOKEN }}
 
-      - name: Update content backlog
+      - name: Change status backlog
         run: |
           ISSUE_ID="${{ needs.handle-release.outputs.issue_id }}"
           curl -s -X PATCH "https://${BACKLOG_SPACE}/api/v2/issues/${ISSUE_ID}?apiKey=${BACKLOG_API_KEY}" \
